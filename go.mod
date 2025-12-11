@@ -7,8 +7,8 @@ require (
 	github.com/k8s-manifest-kit/pkg v0.1.0
 	github.com/lburgazzoli/gomega-matchers v0.4.0
 	github.com/onsi/gomega v1.38.2
-	k8s.io/api v0.34.2
-	k8s.io/apimachinery v0.34.2
+	k8s.io/api v0.34.3
+	k8s.io/apimachinery v0.34.3
 )
 
 require (
