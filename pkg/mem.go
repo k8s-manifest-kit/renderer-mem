@@ -19,6 +19,10 @@ type Source struct {
 	// Objects contains pre-constructed Kubernetes manifests to pass through.
 	// Useful for testing, composition, or when objects are already in memory.
 	Objects []unstructured.Unstructured
+
+	// PostRenderers are source-specific post-renderers applied to this source's output
+	// before combining with other sources.
+	PostRenderers []types.PostRenderer
 }
 
 // Renderer handles memory-based rendering operations.
@@ -61,14 +65,24 @@ func New(inputs []Source, opts ...RendererOption) (*Renderer, error) {
 
 // Process implements types.Renderer by returning the objects that were provided during construction.
 // Render-time values are ignored by the memory renderer as objects are already constructed.
-func (r *Renderer) Process(ctx context.Context, _ map[string]any) ([]unstructured.Unstructured, error) {
-	// Make deep copies of all objects from all inputs
+func (r *Renderer) Process(ctx context.Context, _ types.Values) ([]unstructured.Unstructured, error) {
 	allObjects := make([]unstructured.Unstructured, 0)
+
 	for _, holder := range r.inputs {
+		selected, err := pipeline.ApplySourceSelectors(ctx, holder.Source, r.opts.SourceSelectors)
+		if err != nil {
+			return nil, fmt.Errorf("source selector error in mem renderer: %w", err)
+		}
+
+		if !selected {
+			continue
+		}
+
+		sourceObjects := make([]unstructured.Unstructured, 0, len(holder.Objects))
+
 		for _, obj := range holder.Objects {
 			objCopy := obj.DeepCopy()
 
-			// Add source annotations if enabled
 			if r.opts.SourceAnnotations {
 				annotations := objCopy.GetAnnotations()
 				if annotations == nil {
@@ -80,22 +94,31 @@ func (r *Renderer) Process(ctx context.Context, _ map[string]any) ([]unstructure
 				objCopy.SetAnnotations(annotations)
 			}
 
-			allObjects = append(allObjects, *objCopy)
+			sourceObjects = append(sourceObjects, *objCopy)
 		}
+
+		if r.opts.ContentHash {
+			for i := range sourceObjects {
+				types.SetContentHash(&sourceObjects[i])
+			}
+		}
+
+		sourceObjects, err = pipeline.ApplyPostRenderers(ctx, sourceObjects, holder.PostRenderers)
+		if err != nil {
+			return nil, fmt.Errorf("source post-renderer error in mem renderer: %w", err)
+		}
+
+		allObjects = append(allObjects, sourceObjects...)
 	}
 
-	if r.opts.ContentHash {
-		for i := range allObjects {
-			types.SetContentHash(&allObjects[i])
-		}
-	}
+	chain := types.BuildPostRendererChain(r.opts.Filters, r.opts.Transformers, r.opts.PostRenderers)
 
-	transformed, err := pipeline.Apply(ctx, allObjects, r.opts.Filters, r.opts.Transformers)
+	result, err := pipeline.ApplyPostRenderers(ctx, allObjects, chain)
 	if err != nil {
-		return nil, fmt.Errorf("error applying filters/transformers in mem renderer: %w", err)
+		return nil, fmt.Errorf("renderer post-renderer error in mem renderer: %w", err)
 	}
 
-	return transformed, nil
+	return result, nil
 }
 
 // Name returns the renderer type identifier.
