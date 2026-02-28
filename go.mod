@@ -3,8 +3,8 @@ module github.com/k8s-manifest-kit/renderer-mem
 go 1.25.7
 
 require (
-	github.com/k8s-manifest-kit/engine v0.2.0
-	github.com/k8s-manifest-kit/pkg v0.2.0
+	github.com/k8s-manifest-kit/engine v0.2.1-0.20260228090107-2c18e9933dcd
+	github.com/k8s-manifest-kit/pkg v0.2.1-0.20260228090024-af694e3e590d
 	github.com/lburgazzoli/gomega-matchers v0.4.1-0.20260219145423-4061a5fb8799
 	github.com/onsi/gomega v1.39.1
 	k8s.io/api v0.35.1
@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
@@ -26,6 +27,7 @@ require (
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260127142750-a19766b6e2d4 // indirect
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect

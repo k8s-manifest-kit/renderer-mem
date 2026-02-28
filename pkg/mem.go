@@ -33,6 +33,7 @@ func New(inputs []Source, opts ...RendererOption) (*Renderer, error) {
 	rendererOpts := RendererOptions{
 		Filters:      make([]types.Filter, 0),
 		Transformers: make([]types.Transformer, 0),
+		ContentHash:  true,
 	}
 
 	for _, opt := range opts {
@@ -80,6 +81,12 @@ func (r *Renderer) Process(ctx context.Context, _ map[string]any) ([]unstructure
 			}
 
 			allObjects = append(allObjects, *objCopy)
+		}
+	}
+
+	if r.opts.ContentHash {
+		for i := range allObjects {
+			types.SetContentHash(&allObjects[i])
 		}
 	}
 
