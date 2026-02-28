@@ -181,7 +181,6 @@ Focus on:
 
 Potential improvements (not currently implemented):
 - Lazy deep copying (copy-on-write)
-- Parallel deep copying for large object sets
 - Optional shallow copying for immutable objects
 - Memory pooling for frequent small renders
 
