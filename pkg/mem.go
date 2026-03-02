@@ -25,6 +25,11 @@ type Source struct {
 	PostRenderers []types.PostRenderer
 }
 
+// SourceSelector decides whether a Source should be rendered.
+// It receives the context and the source, and returns true to include
+// the source or false to skip it. Evaluated before rendering.
+type SourceSelector = func(ctx context.Context, source Source) (bool, error)
+
 // Renderer handles memory-based rendering operations.
 // It implements types.Renderer for objects that are already in memory.
 type Renderer struct {
