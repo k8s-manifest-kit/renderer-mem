@@ -193,8 +193,8 @@ r, err := mem.New(
 ## Questions?
 
 Check:
-1. `docs/design.md` - Architecture and design decisions
-2. `docs/development.md` - Development workflow
+1. @docs/design.md - Architecture and design decisions
+2. @docs/development.md - Development workflow
 3. `pkg/*_test.go` - Usage examples
 4. Parent repository documentation at github.com/k8s-manifest-kit
 
