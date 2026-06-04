@@ -1,6 +1,6 @@
 module github.com/k8s-manifest-kit/renderer-mem
 
-go 1.25.7
+go 1.25.11
 
 require (
 	github.com/k8s-manifest-kit/engine v0.2.1-0.20260302081044-bbc1e11e1957
