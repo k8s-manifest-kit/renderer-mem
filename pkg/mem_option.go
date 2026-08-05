@@ -34,8 +34,8 @@ type RendererOptions struct {
 func (opts RendererOptions) ApplyTo(target *RendererOptions) {
 	target.Filters = opts.Filters
 	target.Transformers = opts.Transformers
-	target.PostRenderers = append(target.PostRenderers, opts.PostRenderers...)
-	target.SourceSelectors = append(target.SourceSelectors, opts.SourceSelectors...)
+	target.PostRenderers = opts.PostRenderers
+	target.SourceSelectors = opts.SourceSelectors
 	target.SourceAnnotations = opts.SourceAnnotations
 	target.ContentHash = opts.ContentHash
 }
