@@ -108,6 +108,12 @@ func (r *Renderer) Process(ctx context.Context, _ types.Values) ([]unstructured.
 			}
 		}
 
+		if r.opts.SourceAnnotations {
+			for i := range sourceObjects {
+				types.SetRenderOrigin(&sourceObjects[i], types.RenderOriginLive)
+			}
+		}
+
 		sourceObjects, err = pipeline.ApplyPostRenderers(ctx, sourceObjects, holder.PostRenderers)
 		if err != nil {
 			return nil, fmt.Errorf("source post-renderer error in mem renderer: %w", err)

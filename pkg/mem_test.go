@@ -240,6 +240,10 @@ func TestSourceAnnotations(t *testing.T) {
 		// Verify source annotations are present
 		annotations := objects[0].GetAnnotations()
 		g.Expect(annotations).Should(HaveKeyWithValue(pkgtypes.AnnotationSourceType, "mem"))
+		g.Expect(annotations).Should(HaveKeyWithValue(
+			pkgtypes.AnnotationRenderOrigin,
+			pkgtypes.RenderOriginLive,
+		))
 		// Mem renderer should not have path or file annotations
 		g.Expect(annotations).ShouldNot(HaveKey(pkgtypes.AnnotationSourcePath))
 		g.Expect(annotations).ShouldNot(HaveKey(pkgtypes.AnnotationSourceFile))
