@@ -264,6 +264,7 @@ func mutateNestedContent(g *WithT, objects []unstructured.Unstructured) {
 
 	labels := pod.GetLabels()
 	labels["app"] = "mutated"
+	pod.SetLabels(labels)
 
 	containers, ok, err := unstructured.NestedSlice(pod.Object, "spec", "containers")
 	g.Expect(err).ToNot(HaveOccurred())
@@ -277,11 +278,15 @@ func mutateNestedContent(g *WithT, objects []unstructured.Unstructured) {
 	configMap := findObject(objects, "ConfigMap", "race-config")
 	g.Expect(configMap).ToNot(BeNil())
 
+	// GetLabels, NestedSlice, and NestedMap return copies, so every
+	// mutation must be written back to actually touch the result.
 	data, ok, err := unstructured.NestedMap(configMap.Object, "data")
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(ok).To(BeTrue())
 
 	data["port"] = "mutated"
+	err = unstructured.SetNestedMap(configMap.Object, data, "data")
+	g.Expect(err).ToNot(HaveOccurred())
 }
 
 // findObject returns the object with the given kind and name, or nil.
