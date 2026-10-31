@@ -31,6 +31,29 @@ is no live integration target.
 - Tests live in the external `mem_test` package and exercise the public API
   with Gomega assertions, `t.Context()`, and Kubernetes unstructured helpers.
 
+### Multiline strings
+
+- Use one descriptive, standalone, package-level `const name =` declaration
+  with a raw string literal for every multiline string: fixtures, manifests,
+  templates, and expected output.
+- Never embed multiline string literals in function or method bodies, and
+  never declare them as function-local constants.
+- Never group multiline constants in `const (...)`. Related single-line
+  scalar constants can still be grouped, and single-line inline strings are
+  unaffected.
+- Keep large literal content separate from execution logic for readability.
+  Preserve meaningful content indentation; the declaration layout must not
+  introduce unintended bytes.
+- A function may format the named template into a local variable; the
+  prohibition concerns where the literal is declared, not where its string
+  value is used.
+
+```go
+const fixtureYAML = `apiVersion: v1
+kind: ConfigMap
+`
+```
+
 ## Ownership tests
 
 `Process` deep-copies the selected source objects on every call, and tests
