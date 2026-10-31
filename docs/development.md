@@ -20,6 +20,13 @@ is no live integration target.
 
 ## Code conventions
 
+- Package layout: `mem.go` holds the source model and renderer, `mem_option.go`
+  the renderer options, `mem_support.go` shared implementation helpers, and
+  `engine.go` the `NewEngine` convenience constructor. Renderer options are
+  typed by the shared `github.com/k8s-manifest-kit/pkg/util/option` package.
+  The renderer has no cache or filesystem package by design; the layout
+  follows the shared [`project-layout.md`](../../docs/project-layout.md)
+  convention (workspace navigation).
 - Give each function parameter its type explicitly: `name string,
   namespace string`, not `name, namespace string`.
 - Keep shared implementation helpers in `mem_support.go` and test-only support
