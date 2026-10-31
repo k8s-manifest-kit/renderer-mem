@@ -23,8 +23,9 @@ is no live integration target.
 - Give each function parameter its type explicitly: `name string,
   namespace string`, not `name, namespace string`.
 - Keep shared implementation helpers in `mem_support.go` and test-only support
-  in the `_test.go` files; leave cohesive feature files such as `mem.go`
-  intact rather than extracting every small helper.
+  in the support files described under [Test layout](#test-layout); leave
+  cohesive feature files such as `mem.go` intact rather than extracting every
+  small helper.
 - Wrap errors with operation context using `%w` when a cause exists, and check
   sentinels such as `ErrObjectEmpty` with `errors.Is`. Validation errors name
   the source index or object path needed for diagnosis.
@@ -54,6 +55,31 @@ kind: ConfigMap
 `
 ```
 
+## Test layout
+
+- Colocate tests with the implementation in `pkg/`; a `test/` subdirectory
+  would be a separate Go package, not a cosmetic folder, so keep the existing
+  `mem_test` package boundaries.
+- Keep a cohesive `mem_test.go` for core public-API behavior and organize
+  larger suites by concern as `mem_<concern>_test.go`, such as
+  `mem_metadata_test.go` and `mem_concurrency_test.go`. These names describe
+  real concerns; they are not a mandatory file set for every package.
+- Place benchmarks in `mem_benchmark_test.go`, in the same package directory,
+  retaining benchmark names and setup/timing behavior.
+- Put helpers shared across a package's tests in `mem_support_test.go` and
+  substantial feature-specific fixture machinery in
+  `mem_<concern>_support_test.go`, as `mem_concurrency_support_test.go` does
+  for the concurrency suite. Small test-local helpers and scenario assertions
+  can remain beside their tests.
+- Support files contain helper, fixture, type, and constant declarations, not
+  test, benchmark, fuzz, or example entry points. `_support_test.go` is a
+  naming convention; only `_test.go` has Go's test-file significance.
+- Keep tests discoverable without excessive fragmentation: no hard line
+  limit, no one-file-per-test rule, and no blanket extraction of small
+  helpers. Filenames alone do not exclude a test from the default offline
+  suite: `TestMetricsIntegration` verifies no-metrics rendering and `Name()`
+  offline and stays in `mem_test.go`.
+
 ## Ownership tests
 
 `Process` deep-copies the selected source objects on every call, and tests
@@ -62,7 +88,7 @@ must prove that ownership claim with effective mutations:
 - Kubernetes getters such as `GetLabels`, `NestedMap`, and `NestedSlice` can
   return detached copies. Write mutations back with `SetLabels`,
   `SetNestedMap`, and `SetNestedSlice` so they reach the actual result, as
-  `mutateNestedContent` in `mem_concurrency_test.go` does.
+  `mutateNestedContent` in `mem_concurrency_support_test.go` does.
 - First assert that the mutation changed the result it was applied to, then
   verify that other results, the original source objects, and subsequent
   renders from the same renderer remain unaffected.
