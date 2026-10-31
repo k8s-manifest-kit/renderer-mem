@@ -3,9 +3,18 @@
 ## Source and ownership
 
 `mem.Source` contains a slice of `unstructured.Unstructured` objects and
-optional source-specific post-renderers. The renderer deep-copies objects when
-it accepts a source and when it returns results, so callers and the renderer do
-not share mutable object state.
+optional source-specific post-renderers.
+
+`mem.New` retains the supplied `Source` values, including their object slices,
+by reference. Construction is not a detached snapshot: callers own the source
+objects and must not mutate them while the renderer is in use, including
+concurrently with `Process` calls.
+
+Every `Process` call deep-copies the selected objects before running its
+pipeline, so each returned result owns its nested maps and slices
+independently of other results, of the original sources, and of subsequent
+renders. There is no output cache; each call renders again from the retained
+inputs.
 
 ## Pipeline
 
