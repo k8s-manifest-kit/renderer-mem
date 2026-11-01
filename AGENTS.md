@@ -41,6 +41,8 @@ make check       # lint and vulncheck
 Use the Go version prescribed by `go.mod`. Use unstructured objects in tests,
 Gomega assertions, `t.Context()`, and explicit tests for deep-copy isolation,
 selectors, post-renderers, annotations, hashes, and validation errors.
-Ownership and concurrency test rules are described in
-[Development](docs/development.md).
+Keep tests focused and simple: use the smallest object fixture that proves
+the behavior, and add helpers or extra test files only when a concrete
+behavior or regression requires them. Ownership and concurrency test rules
+are described in [Development](docs/development.md).
 

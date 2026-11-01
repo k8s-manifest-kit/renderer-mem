@@ -62,6 +62,24 @@ kind: ConfigMap
 `
 ```
 
+## Test simplicity
+
+Use the simplest test that proves the contract under test. Don't re-test
+standard-library internals, and don't add helpers, mocks, instrumentation,
+subprocesses, or extra test files unless a concrete behavior or regression
+requires them. Small object transformations need direct assertions on small
+unstructured fixtures, not framework-like setup; the
+[Test layout](#test-layout) rules below describe where a justified split
+goes, not a requirement to create those files.
+
+Keep fixtures proportional to the behavior under test: construct the
+smallest unstructured objects that exercise it, reuse existing fixtures
+before creating new ones, and don't invent speculative edge-case matrices
+or cache/network responsibilities this renderer does not have. The
+ownership and concurrency duties below — effective nested mutations written
+back with setters, unchanged source inputs, independent results, and joined
+shared-instance concurrency tests — are unchanged by this rule.
+
 ## Test layout
 
 - Colocate tests with the implementation in `pkg/`; a `test/` subdirectory
