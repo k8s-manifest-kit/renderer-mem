@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	pkgtypes "github.com/k8s-manifest-kit/engine/pkg/types"
+	"github.com/k8s-manifest-kit/pkg/util/k8s"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,6 +15,167 @@ import (
 
 	. "github.com/onsi/gomega"
 )
+
+// annotatedMemObject returns a ConfigMap carrying its own annotations,
+// including stale kit-managed keys, to characterize how renderer annotation
+// phases interact with pre-existing metadata.
+func annotatedMemObject(name string) unstructured.Unstructured {
+	configMap := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Annotations: map[string]string{
+				"existing":                      "annotation",
+				pkgtypes.AnnotationContentHash:  "sha256:stale",
+				pkgtypes.AnnotationRenderOrigin: "stale",
+				pkgtypes.AnnotationSourcePath:   "seeded/path.yaml",
+				pkgtypes.AnnotationSourceFile:   "seeded/file.yaml",
+			},
+		},
+		Data: map[string]string{"key": "value"},
+	}
+
+	unstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(configMap)
+	if err != nil {
+		panic(err)
+	}
+
+	return unstructured.Unstructured{Object: unstructuredMap}
+}
+
+// cleanMemObject returns a ConfigMap without any annotations.
+func cleanMemObject(name string) unstructured.Unstructured {
+	configMap := &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Data:       map[string]string{"key": "value"},
+	}
+
+	unstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(configMap)
+	if err != nil {
+		panic(err)
+	}
+
+	return unstructured.Unstructured{Object: unstructuredMap}
+}
+
+// renderMemObjects processes the given objects with the renderer options.
+func renderMemObjects(
+	t *testing.T,
+	objects []unstructured.Unstructured,
+	opts ...mem.RendererOption,
+) []unstructured.Unstructured {
+	t.Helper()
+
+	g := NewWithT(t)
+
+	renderer, err := mem.New([]mem.Source{{Objects: objects}}, opts...)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	result, err := renderer.Process(t.Context(), nil)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	return result
+}
+
+// TestAnnotationApplication characterizes how the memory renderer applies
+// type-only source metadata, content hashes, and live origins.
+func TestAnnotationApplication(t *testing.T) {
+
+	t.Run("exact annotation map with hash over pre-existing metadata before live origin", func(t *testing.T) {
+		g := NewWithT(t)
+
+		input := annotatedMemObject("annotated")
+		objects := renderMemObjects(t, []unstructured.Unstructured{input}, mem.WithSourceAnnotations(true))
+
+		g.Expect(objects).To(HaveLen(1))
+
+		expected := input.DeepCopy()
+		expected.SetAnnotations(map[string]string{
+			"existing":                      "annotation",
+			pkgtypes.AnnotationContentHash:  "sha256:stale",
+			pkgtypes.AnnotationRenderOrigin: "stale",
+			pkgtypes.AnnotationSourcePath:   "seeded/path.yaml",
+			pkgtypes.AnnotationSourceFile:   "seeded/file.yaml",
+			pkgtypes.AnnotationSourceType:   "mem",
+		})
+
+		g.Expect(objects[0].GetAnnotations()).To(Equal(map[string]string{
+			"existing":                      "annotation",
+			pkgtypes.AnnotationSourceType:   "mem",
+			pkgtypes.AnnotationSourcePath:   "seeded/path.yaml",
+			pkgtypes.AnnotationSourceFile:   "seeded/file.yaml",
+			pkgtypes.AnnotationContentHash:  k8s.ContentHash(expected),
+			pkgtypes.AnnotationRenderOrigin: pkgtypes.RenderOriginLive,
+		}))
+	})
+
+	t.Run("source annotations without content hash leave no hash key and no path or file", func(t *testing.T) {
+		g := NewWithT(t)
+
+		objects := renderMemObjects(t,
+			[]unstructured.Unstructured{cleanMemObject("no-hash")},
+			mem.WithSourceAnnotations(true),
+			mem.WithContentHash(false),
+		)
+
+		g.Expect(objects).To(HaveLen(1))
+
+		annotations := objects[0].GetAnnotations()
+		g.Expect(annotations).To(HaveLen(2))
+		g.Expect(annotations).To(HaveKeyWithValue(pkgtypes.AnnotationSourceType, "mem"))
+		g.Expect(annotations).To(HaveKeyWithValue(pkgtypes.AnnotationRenderOrigin, pkgtypes.RenderOriginLive))
+		g.Expect(annotations).NotTo(HaveKey(pkgtypes.AnnotationContentHash))
+		g.Expect(annotations).NotTo(HaveKey(pkgtypes.AnnotationSourcePath))
+		g.Expect(annotations).NotTo(HaveKey(pkgtypes.AnnotationSourceFile))
+	})
+
+	t.Run("disabled annotations hash over pre-existing metadata and inject no type or origin", func(t *testing.T) {
+		g := NewWithT(t)
+
+		input := annotatedMemObject("bare")
+		objects := renderMemObjects(t, []unstructured.Unstructured{input})
+
+		g.Expect(objects).To(HaveLen(1))
+
+		annotations := objects[0].GetAnnotations()
+		g.Expect(annotations).To(HaveKeyWithValue(
+			pkgtypes.AnnotationContentHash,
+			k8s.ContentHash(input.DeepCopy()),
+		))
+		g.Expect(annotations).To(HaveKeyWithValue("existing", "annotation"))
+		g.Expect(annotations).To(HaveKeyWithValue(pkgtypes.AnnotationSourcePath, "seeded/path.yaml"))
+		g.Expect(annotations).To(HaveKeyWithValue(pkgtypes.AnnotationSourceFile, "seeded/file.yaml"))
+		// The stale origin is pre-existing metadata, not an injected one.
+		g.Expect(annotations).To(HaveKeyWithValue(pkgtypes.AnnotationRenderOrigin, "stale"))
+		g.Expect(annotations).NotTo(HaveKey(pkgtypes.AnnotationSourceType))
+	})
+
+	t.Run("caller objects remain untouched and results are deeply independent", func(t *testing.T) {
+		g := NewWithT(t)
+
+		input := annotatedMemObject("isolated")
+		original := input.DeepCopy()
+
+		first := renderMemObjects(t, []unstructured.Unstructured{input}, mem.WithSourceAnnotations(true))
+
+		// Mutate nested content and the annotation map of the result.
+		first[0].GetAnnotations()["mutated"] = "result-state"
+		g.Expect(unstructured.SetNestedField(first[0].Object, "mutated", "data", "key")).To(Succeed())
+
+		second := renderMemObjects(t, []unstructured.Unstructured{input}, mem.WithSourceAnnotations(true))
+
+		g.Expect(input).To(Equal(*original))
+		g.Expect(second[0].GetAnnotations()).NotTo(HaveKey("mutated"))
+		g.Expect(second[0].GetAnnotations()).To(HaveKeyWithValue(pkgtypes.AnnotationSourceType, "mem"))
+		g.Expect(second[0].GetAnnotations()).To(HaveKeyWithValue(pkgtypes.AnnotationContentHash,
+			first[0].GetAnnotations()[pkgtypes.AnnotationContentHash]))
+		data, found, err := unstructured.NestedString(second[0].Object, "data", "key")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(found).To(BeTrue())
+		g.Expect(data).To(Equal("value"))
+	})
+}
 
 func TestSourceAnnotations(t *testing.T) {
 

@@ -86,33 +86,25 @@ func (r *Renderer) Process(ctx context.Context, _ types.Values) ([]unstructured.
 		sourceObjects := make([]unstructured.Unstructured, 0, len(holder.Objects))
 
 		for _, obj := range holder.Objects {
-			objCopy := obj.DeepCopy()
+			sourceObjects = append(sourceObjects, *obj.DeepCopy())
+		}
 
-			if r.opts.SourceAnnotations {
-				annotations := objCopy.GetAnnotations()
-				if annotations == nil {
-					annotations = make(map[string]string)
-				}
+		var opts []types.AnnotationOption
 
-				annotations[types.AnnotationSourceType] = rendererType
-
-				objCopy.SetAnnotations(annotations)
-			}
-
-			sourceObjects = append(sourceObjects, *objCopy)
+		if r.opts.SourceAnnotations {
+			opts = append(opts,
+				types.WithSourceAnnotations(map[string]string{
+					types.AnnotationSourceType: rendererType,
+				}),
+				types.WithRenderOrigin(types.RenderOriginLive),
+			)
 		}
 
 		if r.opts.ContentHash {
-			for i := range sourceObjects {
-				types.SetContentHash(&sourceObjects[i])
-			}
+			opts = append(opts, types.WithContentHash(true))
 		}
 
-		if r.opts.SourceAnnotations {
-			for i := range sourceObjects {
-				types.SetRenderOrigin(&sourceObjects[i], types.RenderOriginLive)
-			}
-		}
+		types.AnnotateObjects(sourceObjects, opts...)
 
 		sourceObjects, err = pipeline.ApplyPostRenderers(ctx, sourceObjects, holder.PostRenderers)
 		if err != nil {
