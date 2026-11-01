@@ -159,8 +159,12 @@ func TestAnnotationApplication(t *testing.T) {
 
 		first := renderMemObjects(t, []unstructured.Unstructured{input}, mem.WithSourceAnnotations(true))
 
-		// Mutate nested content and the annotation map of the result.
-		first[0].GetAnnotations()["mutated"] = "result-state"
+		// Mutate nested content and the annotation map of the result. The
+		// annotation mutation goes through SetAnnotations because
+		// GetAnnotations returns a copy.
+		resultAnnotations := first[0].GetAnnotations()
+		resultAnnotations["mutated"] = "result-state"
+		first[0].SetAnnotations(resultAnnotations)
 		g.Expect(unstructured.SetNestedField(first[0].Object, "mutated", "data", "key")).To(Succeed())
 
 		second := renderMemObjects(t, []unstructured.Unstructured{input}, mem.WithSourceAnnotations(true))
