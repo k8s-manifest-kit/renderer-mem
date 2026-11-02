@@ -70,7 +70,14 @@ func New(inputs []Source, opts ...RendererOption) (*Renderer, error) {
 
 // Process implements types.Renderer by returning the objects that were provided during construction.
 // Render-time values are ignored by the memory renderer as objects are already constructed.
+//
+// A nil *Renderer returns types.ErrRendererNil with no objects instead of
+// panicking; Name and the constructors are unaffected by a nil receiver.
 func (r *Renderer) Process(ctx context.Context, _ types.Values) ([]unstructured.Unstructured, error) {
+	if r == nil {
+		return nil, types.ErrRendererNil
+	}
+
 	allObjects := make([]unstructured.Unstructured, 0)
 
 	for _, holder := range r.inputs {

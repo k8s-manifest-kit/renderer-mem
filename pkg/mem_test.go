@@ -1,10 +1,13 @@
 package mem_test
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/k8s-manifest-kit/engine/pkg/filter/meta/gvk"
 	"github.com/k8s-manifest-kit/engine/pkg/transformer/meta/labels"
+	pkgtypes "github.com/k8s-manifest-kit/engine/pkg/types"
 	jqmatcher "github.com/lburgazzoli/gomega-matchers/pkg/matchers/jq"
 	"github.com/onsi/gomega/types"
 
@@ -195,4 +198,52 @@ func TestMetricsIntegration(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(renderer.Name()).To(Equal("mem"))
 	})
+}
+
+// TestProcessNilRenderer verifies that a typed-nil mem Renderer answers the
+// sentinel instead of panicking when Process is called directly.
+func TestProcessNilRenderer(t *testing.T) {
+	g := NewWithT(t)
+
+	var renderer *mem.Renderer
+
+	objects, err := renderer.Process(t.Context(), nil)
+
+	g.Expect(err).To(MatchError(pkgtypes.ErrRendererNil))
+	g.Expect(objects).To(BeNil())
+}
+
+// TestSourcePostRendererChainIndex verifies that a failing source-specific
+// post-renderer reports the adopted engine chain index while preserving the
+// cause and the mem-renderer context.
+func TestSourcePostRendererChainIndex(t *testing.T) {
+	g := NewWithT(t)
+
+	errHook := errors.New("hook failed")
+
+	obj := unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata":   map[string]any{"name": "test-pod"},
+	}}
+
+	renderer, err := mem.New([]mem.Source{
+		{
+			Objects: []unstructured.Unstructured{obj},
+			PostRenderers: []pkgtypes.PostRenderer{
+				func(_ context.Context, _ []unstructured.Unstructured) ([]unstructured.Unstructured, error) {
+					return nil, errHook
+				},
+			},
+		},
+	})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	objects, err := renderer.Process(t.Context(), nil)
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(errors.Is(err, errHook)).To(BeTrue(), "the hook cause stays discoverable")
+	g.Expect(err.Error()).To(ContainSubstring("post-renderer error at chain index 0"))
+	g.Expect(err.Error()).To(ContainSubstring("source post-renderer error in mem renderer"))
+	g.Expect(objects).To(BeNil())
 }

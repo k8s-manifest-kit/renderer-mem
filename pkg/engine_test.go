@@ -1,7 +1,11 @@
 package mem_test
 
 import (
+	"errors"
 	"testing"
+
+	engine "github.com/k8s-manifest-kit/engine/pkg"
+	"github.com/k8s-manifest-kit/engine/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,4 +79,22 @@ func TestNewEngine(t *testing.T) {
 		g.Expect(err).ShouldNot(HaveOccurred())
 		g.Expect(objects).To(BeEmpty())
 	})
+}
+
+// TestEngineTypedNilRenderer verifies that engine construction accepts the
+// typed-nil built-in — Name is nil-safe — and that rendering returns the
+// nil-receiver sentinel without panic.
+func TestEngineTypedNilRenderer(t *testing.T) {
+	g := NewWithT(t)
+
+	var renderer *mem.Renderer
+
+	e, err := engine.New(engine.WithRenderer(renderer))
+	g.Expect(err).ToNot(HaveOccurred(), "engine construction accepts the typed-nil built-in")
+
+	objects, err := e.Render(t.Context())
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(errors.Is(err, types.ErrRendererNil)).To(BeTrue())
+	g.Expect(objects).To(BeNil())
 }
