@@ -81,7 +81,7 @@ source byte representation, and it is not idempotent. Later source,
 renderer, and engine processing does not automatically rehash, and hook
 mutations need not match the stored digest. The full annotation phase
 contract is the engine's
-[annotation contract](../../engine/docs/design.md#annotations); this
+[annotation contract](https://github.com/k8s-manifest-kit/engine/blob/main/docs/design.md#annotations); this
 renderer follows it at the points described above.
 
 See [`../AGENTS.md`](../AGENTS.md) and [`development.md`](development.md).
