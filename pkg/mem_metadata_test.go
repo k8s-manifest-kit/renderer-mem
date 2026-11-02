@@ -1,8 +1,10 @@
 package mem_test
 
 import (
+	"slices"
 	"testing"
 
+	engine "github.com/k8s-manifest-kit/engine/pkg"
 	pkgtypes "github.com/k8s-manifest-kit/engine/pkg/types"
 	"github.com/k8s-manifest-kit/pkg/util/k8s"
 
@@ -399,4 +401,146 @@ func TestContentHash(t *testing.T) {
 		g.Expect(hash2).ShouldNot(BeEmpty())
 		g.Expect(hash1).ShouldNot(Equal(hash2))
 	})
+}
+
+// copyMemObjects returns deep copies of the given objects.
+func copyMemObjects(objects []unstructured.Unstructured) []unstructured.Unstructured {
+	copies := make([]unstructured.Unstructured, 0, len(objects))
+	for i := range objects {
+		copies = append(copies, *objects[i].DeepCopy())
+	}
+
+	return copies
+}
+
+// TestEngineCompositionMatchesDirectRenders pins that objects produced by two
+// real mem renderers reach the engine unchanged: hashes, provenance
+// annotations, and order must match the directly rendered baselines on every
+// engine call, without mutating the baselines or the source objects.
+func TestEngineCompositionMatchesDirectRenders(t *testing.T) {
+	g := NewWithT(t)
+
+	firstSource := cleanMemObject("engine-first")
+	secondSource := cleanMemObject("engine-second")
+
+	firstRenderer, err := mem.New(
+		[]mem.Source{{Objects: []unstructured.Unstructured{firstSource}}},
+		mem.WithSourceAnnotations(true),
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "first renderer construction")
+
+	secondRenderer, err := mem.New(
+		[]mem.Source{{Objects: []unstructured.Unstructured{secondSource}}},
+		mem.WithSourceAnnotations(true),
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "second renderer construction")
+
+	// Mem ignores render-time values, so nil is the effective value on both
+	// the direct path and the engine path.
+	firstBaseline, err := firstRenderer.Process(t.Context(), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "first renderer baseline process")
+	secondBaseline, err := secondRenderer.Process(t.Context(), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "second renderer baseline process")
+
+	g.Expect(firstBaseline).To(HaveLen(1))
+	g.Expect(secondBaseline).To(HaveLen(1))
+
+	// Each baseline carries a nonempty hash and full provenance before it
+	// enters the engine.
+	g.Expect(firstBaseline[0].GetAnnotations()[pkgtypes.AnnotationContentHash]).NotTo(BeEmpty())
+	g.Expect(secondBaseline[0].GetAnnotations()[pkgtypes.AnnotationContentHash]).NotTo(BeEmpty())
+	g.Expect(firstBaseline[0].GetAnnotations()).To(HaveKeyWithValue(pkgtypes.AnnotationSourceType, "mem"))
+	g.Expect(firstBaseline[0].GetAnnotations()).To(HaveKeyWithValue(
+		pkgtypes.AnnotationRenderOrigin,
+		pkgtypes.RenderOriginLive,
+	))
+
+	firstBaselineCopy := copyMemObjects(firstBaseline)
+	secondBaselineCopy := copyMemObjects(secondBaseline)
+	firstSourceCopy := firstSource.DeepCopy()
+	secondSourceCopy := secondSource.DeepCopy()
+
+	composed, err := engine.New(engine.WithRenderer(firstRenderer), engine.WithRenderer(secondRenderer))
+	g.Expect(err).ToNot(HaveOccurred(), "engine construction")
+
+	// The expected engine result is the ordered concatenation of both
+	// baselines, hashes and provenance included; nothing is recomputed.
+	expected := slices.Concat(firstBaseline, secondBaseline)
+
+	firstRender, err := composed.Render(t.Context())
+	g.Expect(err).ToNot(HaveOccurred(), "first engine render")
+	g.Expect(firstRender).To(Equal(expected), "first engine render matches concatenated baselines")
+
+	secondRender, err := composed.Render(t.Context())
+	g.Expect(err).ToNot(HaveOccurred(), "second engine render")
+	g.Expect(secondRender).To(Equal(expected), "second engine render matches concatenated baselines")
+
+	// Later engine runs must not mutate the retained baselines or sources.
+	g.Expect(firstBaseline).To(Equal(firstBaselineCopy), "first baseline unchanged after engine renders")
+	g.Expect(secondBaseline).To(Equal(secondBaselineCopy), "second baseline unchanged after engine renders")
+	g.Expect(firstSource).To(Equal(*firstSourceCopy), "first source object unchanged after engine renders")
+	g.Expect(secondSource).To(Equal(*secondSourceCopy), "second source object unchanged after engine renders")
+}
+
+// TestAnnotatedOutputReIngestion characterizes feeding a real first-pass mem
+// output back through a new mem source: only the content hash is replaced,
+// by hashing the still-annotated input, and repeated renders of the same
+// frozen input are deterministic without mutating it.
+func TestAnnotatedOutputReIngestion(t *testing.T) {
+	g := NewWithT(t)
+
+	source := cleanMemObject("reingest")
+	source.SetAnnotations(map[string]string{"example.com/team": "platform"})
+
+	// Source annotations are disabled on both passes; hashes stay enabled.
+	firstRenderer, err := mem.New([]mem.Source{{Objects: []unstructured.Unstructured{source}}})
+	g.Expect(err).ToNot(HaveOccurred(), "first-pass renderer construction")
+
+	firstObjects, err := firstRenderer.Process(t.Context(), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "first-pass process")
+	g.Expect(firstObjects).To(HaveLen(1))
+
+	firstHash := firstObjects[0].GetAnnotations()[pkgtypes.AnnotationContentHash]
+	g.Expect(firstHash).To(MatchRegexp("^sha256:[0-9a-f]{64}$"), "first-pass hash annotation")
+
+	// Freeze the actual first-pass output; it already carries the first hash.
+	frozenFirst := firstObjects[0].DeepCopy()
+	frozenFirstCopy := frozenFirst.DeepCopy()
+
+	// The expected second hash covers the whole still-annotated input,
+	// including the first-pass hash annotation.
+	expectedHash := k8s.ContentHash(frozenFirst.DeepCopy())
+	g.Expect(expectedHash).NotTo(Equal(firstHash), "second hash differs from the first-pass hash")
+
+	expectedSecond := frozenFirst.DeepCopy()
+	expectedAnnotations := expectedSecond.GetAnnotations()
+	expectedAnnotations[pkgtypes.AnnotationContentHash] = expectedHash
+	expectedSecond.SetAnnotations(expectedAnnotations)
+
+	secondRenderer, err := mem.New([]mem.Source{{
+		Objects: []unstructured.Unstructured{*frozenFirst.DeepCopy()},
+	}})
+	g.Expect(err).ToNot(HaveOccurred(), "second-pass renderer construction")
+
+	firstRerun, err := secondRenderer.Process(t.Context(), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "first re-ingest render")
+	g.Expect(firstRerun).To(HaveLen(1))
+	g.Expect(firstRerun[0]).To(Equal(*expectedSecond), "first re-ingest render equals the one-hash expected object")
+	g.Expect(firstRerun[0].GetAnnotations()).To(
+		HaveKeyWithValue("example.com/team", "platform"), "user annotation preserved")
+
+	secondRerun, err := secondRenderer.Process(t.Context(), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "second re-ingest render")
+	g.Expect(secondRerun).To(HaveLen(1))
+	g.Expect(secondRerun[0]).To(Equal(*expectedSecond), "second re-ingest render equals the one-hash expected object")
+
+	data, found, err := unstructured.NestedString(secondRerun[0].Object, "data", "key")
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(found).To(BeTrue())
+	g.Expect(data).To(Equal("value"), "object data preserved")
+
+	// Fixed-input reruns must not mutate the frozen first-pass output or the
+	// retained first-pass result.
+	g.Expect(frozenFirst).To(Equal(frozenFirstCopy), "frozen first-pass output unchanged")
+	g.Expect(firstObjects[0]).To(Equal(*frozenFirstCopy), "first-pass result unchanged after re-ingest renders")
 }
