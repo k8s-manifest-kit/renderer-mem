@@ -9,6 +9,21 @@ import (
 type RendererOption = option.Option[RendererOptions]
 
 // RendererOptions is a struct-based option that can set multiple renderer options at once.
+//
+// Options apply left to right: each option sees the state left by the ones
+// before it. When RendererOptions is applied through ApplyTo, every field
+// replaces its counterpart in the target — the hook and selector slices
+// including when nil, and the booleans including when false. There is no
+// cache or function-map configuration in this renderer, so nothing is
+// preserved across a struct application.
+//
+// Functional options change only their own field or append to a single
+// slice, so they compose with anything applied before or after. Note the
+// difference from a fresh constructor: New starts from defaults with content
+// hashing enabled, while applying a RendererOptions struct replaces the
+// hook, selector, and boolean fields outright — a caller who wants content
+// hashing after a struct must set ContentHash: true in the struct (or
+// follow it with WithContentHash(true)).
 type RendererOptions struct {
 	// Filters are renderer-specific filters applied during Process().
 	Filters []types.Filter
@@ -23,14 +38,21 @@ type RendererOptions struct {
 	SourceSelectors []SourceSelector
 
 	// SourceAnnotations enables automatic addition of source tracking annotations.
+	// Applying a RendererOptions struct replaces this field, including with false.
 	SourceAnnotations bool
 
 	// ContentHash enables automatic addition of a SHA-256 content hash annotation.
-	// Default: true (enabled).
+	// Default: true (enabled) in a fresh constructor; applying a
+	// RendererOptions struct replaces this field, including with false, so a
+	// struct that wants hashing must set it to true explicitly.
 	ContentHash bool
 }
 
 // ApplyTo applies the renderer options to the target configuration.
+//
+// Application follows the composition rules documented on RendererOptions:
+// every field replaces its target counterpart, including slices with nil
+// and booleans with false.
 func (opts RendererOptions) ApplyTo(target *RendererOptions) {
 	target.Filters = opts.Filters
 	target.Transformers = opts.Transformers
